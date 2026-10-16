@@ -24,7 +24,7 @@ pub fn run(path: &Path, delete: bool, pos: Option<(f32, f32)>, scale: Option<f32
     let logical = vec2(img.width() as f32 / scale, img.height() as f32 / scale);
     let mut vp = egui::ViewportBuilder::default()
         .with_title("Fastshot Pin")
-        .with_app_id("fastshot-pin")
+        .with_app_id(crate::APP_ID)
         .with_icon(crate::icon::icon_data(64))
         .with_decorations(false)
         .with_transparent(true)

@@ -64,7 +64,20 @@ impl Fonts {
             }
         }
         if faces[0].is_empty() {
-            // No fontconfig: use the font bundled with egui.
+            // No fc-match: try well known font files.
+            for p in [
+                "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/run/host/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+            ] {
+                if let Some(f) = load_font(&PathBuf::from(p)) {
+                    faces[0].push(f);
+                }
+            }
+        }
+        if faces[0].is_empty() {
+            // No fonts at all: use the font bundled with egui.
             let bytes = epaint_default_fonts::UBUNTU_LIGHT.to_vec();
             if let Ok(f) = FontVec::try_from_vec(bytes) {
                 faces[0].push(f);

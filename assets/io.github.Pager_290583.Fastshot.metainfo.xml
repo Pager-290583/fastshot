@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.Pager_290583.Fastshot</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Fastshot</name>
+  <summary>Powerful yet simple to use screenshot software</summary>
+  <summary xml:lang="ru">Мощный и простой инструмент для скриншотов</summary>
+  <developer id="io.github.pager_290583">
+    <name>Pager-290583</name>
+  </developer>
+  <description>
+    <p>
+      Fastshot is a Flameshot-style screenshot tool written in Rust. Select an area,
+      annotate it with the tools placed around the selection and copy the result to the
+      clipboard, save it, pin it on the desktop or upload it.
+    </p>
+    <ul>
+      <li>Pencil, line, arrow, rectangles, ellipse, marker, text, pixelate, counter and invert tools</li>
+      <li>Undo/redo, movable and editable drawings, color wheel and side panel</li>
+      <li>Copy to clipboard, save, pin, open with an application, upload to Imgur</li>
+      <li>Tray icon, launcher, delayed and full screen captures, command line interface</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.Pager_290583.Fastshot.desktop</launchable>
+  <url type="homepage">https://github.com/Pager-290583/fastshot</url>
+  <url type="bugtracker">https://github.com/Pager-290583/fastshot/issues</url>
+  <provides>
+    <binary>fastshot</binary>
+  </provides>
+  <categories>
+    <category>Graphics</category>
+    <category>Utility</category>
+  </categories>
+  <keywords>
+    <keyword>screenshot</keyword>
+    <keyword>capture</keyword>
+    <keyword>annotate</keyword>
+  </keywords>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-16">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

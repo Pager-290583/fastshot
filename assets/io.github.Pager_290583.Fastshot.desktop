@@ -5,13 +5,15 @@ GenericName=Screenshot tool
 GenericName[ru]=Снимок экрана
 Comment=Powerful yet simple to use screenshot software
 Comment[ru]=Мощный и простой инструмент для скриншотов
-Exec=fastshot tray
-Icon=fastshot
+Exec=fastshot
+Icon=io.github.Pager_290583.Fastshot
 Terminal=false
-Categories=Graphics;Utility;
+Categories=Graphics;
 Keywords=screenshot;screen;capture;snipping;annotate;flameshot;скриншот;снимок;
-StartupWMClass=fastshot
+StartupWMClass=io.github.Pager_290583.Fastshot
 Actions=Capture;Launcher;Configure;
+SingleMainWindow=true
+X-GNOME-UsesNotifications=true
 
 [Desktop Action Capture]
 Name=Take screenshot

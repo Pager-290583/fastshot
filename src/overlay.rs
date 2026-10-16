@@ -53,7 +53,7 @@ pub fn run(img: RgbaImage, cfg: Config, opts: OverlayOptions) -> anyhow::Result<
     let native = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Fastshot")
-            .with_app_id("fastshot")
+            .with_app_id(crate::APP_ID)
             .with_icon(crate::icon::icon_data(64))
             .with_decorations(false)
             .with_fullscreen(true)

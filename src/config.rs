@@ -168,7 +168,6 @@ impl Config {
     pub fn save(&self) -> anyhow::Result<()> {
         std::fs::create_dir_all(config_dir())?;
         std::fs::write(config_path(), toml::to_string_pretty(self)?)?;
-        crate::autostart::sync(self.autostart);
         Ok(())
     }
 

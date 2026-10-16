@@ -1,0 +1,98 @@
+name: Flatpak
+
+# Every push to main publishes the "continuous" pre-release,
+# every tag v* publishes a regular release. Pull requests are only built.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: flatpak-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_ID: io.github.Pager_290583.Fastshot
+  MANIFEST: flatpak/io.github.Pager_290583.Fastshot.yml
+  BUNDLE: Fastshot-x86_64.flatpak
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check that cargo-sources.json matches Cargo.lock
+        run: |
+          python3 flatpak/cargo-sources.py Cargo.lock > /tmp/cargo-sources.json
+          if ! diff -q /tmp/cargo-sources.json flatpak/cargo-sources.json; then
+            echo "::error::flatpak/cargo-sources.json is outdated, run: python3 flatpak/cargo-sources.py Cargo.lock > flatpak/cargo-sources.json"
+            exit 1
+          fi
+
+      - name: Restore flatpak-builder cache
+        uses: actions/cache@v4
+        with:
+          path: .flatpak-builder
+          key: flatpak-builder-${{ hashFiles('Cargo.lock', 'flatpak/*.yml') }}
+          restore-keys: flatpak-builder-
+
+      - name: Build
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak-builder --user --disable-rofiles-fuse --force-clean \
+            --install-deps-from=flathub --repo=repo build "$MANIFEST"
+
+      - name: Bundle
+        run: |
+          flatpak build-bundle \
+            --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            repo "$BUNDLE" "$APP_ID"
+          ls -lh "$BUNDLE"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fastshot-flatpak
+          path: ${{ env.BUNDLE }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: fastshot-flatpak
+
+      - name: Publish continuous build
+        if: github.ref == 'refs/heads/main'
+        run: |
+          gh release delete continuous --cleanup-tag --yes || true
+          gh release create continuous "$BUNDLE" \
+            --prerelease --target "$GITHUB_SHA" \
+            --title "Continuous build" \
+            --notes "Automatic build of ${GITHUB_SHA::7} from main.
+
+          Install:
+          \`\`\`
+          flatpak install --user $BUNDLE
+          flatpak run $APP_ID
+          \`\`\`"
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$BUNDLE" \
+            --title "Fastshot $GITHUB_REF_NAME" --generate-notes

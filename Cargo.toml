@@ -12,8 +12,9 @@ egui-phosphor = "0.14"
 epaint_default_fonts = "0.36"
 tiny-skia = "0.12"
 ab_glyph = "0.2"
-ashpd = { version = "0.13", default-features = false, features = ["async-io", "screenshot", "open_uri"] }
+ashpd = { version = "0.13", default-features = false, features = ["async-io", "screenshot", "open_uri", "background", "global_shortcuts"] }
 pollster = "0.4"
+futures-util = "0.3"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "webp"] }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

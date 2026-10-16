@@ -10,14 +10,50 @@ Fastshot — инструмент для скриншотов на Rust, пов�
 
 ## Установка
 
+### Flatpak (рекомендуется)
+
+Готовый пакет собирается GitHub Actions на каждый коммит в `main`. Скачайте
+`Fastshot-x86_64.flatpak` со страницы
+[Releases → Continuous build](https://github.com/Pager-290583/fastshot/releases/tag/continuous)
+и установите:
+
+```sh
+flatpak install --user Fastshot-x86_64.flatpak   # рантайм подтянется с Flathub
+```
+
+После установки Fastshot появится в меню приложений. Запуск из меню оставляет иконку
+в трее (в GNOME нужно расширение AppIndicator). Повторный запуск, пока трей работает,
+сразу делает снимок. Клавишу Print трей регистрирует через портал Global Shortcuts:
+при первом запуске GNOME попросит её подтвердить. Из терминала:
+`flatpak run io.github.Pager_290583.Fastshot gui`.
+
+При первом снимке GNOME один раз спросит разрешение на скриншоты для Fastshot.
+
+Локальная сборка пакета:
+
+```sh
+flatpak install --user flathub org.flatpak.Builder
+flatpak run org.flatpak.Builder --user --install --force-clean \
+    --install-deps-from=flathub build flatpak/io.github.Pager_290583.Fastshot.yml
+```
+
+После изменения зависимостей (`Cargo.lock`) пересоздайте список офлайн-исходников:
+`python3 flatpak/cargo-sources.py Cargo.lock > flatpak/cargo-sources.json`.
+CI проверяет, что файл актуален.
+
+Релизы: каждый push в `main` обновляет pre-release `continuous`, тег `vX.Y.Z` создаёт
+обычный релиз.
+
+### Без Flatpak
+
 ```sh
 ./install.sh               # сборка release и установка в ~/.local (bin, .desktop, иконка)
 ./install.sh --bind-print  # то же самое + привязка клавиши Print к `fastshot gui` в GNOME
 ```
 
 Нужен Rust (`rustup`). Системные `-devel` пакеты не нужны: Wayland, X11 и EGL подгружаются
-динамически. Для работы буфера обмена под Wayland нужен `wl-copy` (пакет `wl-clipboard`),
-без него используется запасной путь через X11/XWayland.
+динамически. Для буфера обмена под Wayland нужен `wl-copy` (пакет `wl-clipboard`; во
+Flatpak он уже внутри).
 
 ## Использование
 

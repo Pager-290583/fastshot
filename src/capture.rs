@@ -14,7 +14,7 @@ pub fn is_wayland() -> bool {
 /// Grab the whole desktop (all monitors) as one image in physical pixels.
 pub fn grab_desktop() -> Result<RgbaImage> {
     if is_wayland() {
-        match grab_portal() {
+        match grab_portal().or_else(|e| retry_after_access(e)) {
             Ok(img) => return Ok(img),
             Err(e) => {
                 if std::env::var_os("DISPLAY").is_none() {
@@ -25,6 +25,29 @@ pub fn grab_desktop() -> Result<RgbaImage> {
         }
     }
     grab_x11()
+}
+
+/// GNOME only shows the "allow screenshots" dialog to the focused app. A tray
+/// or command line capture has no window, so on the first denial we open a
+/// small window that asks for access; GNOME remembers the answer.
+fn retry_after_access(e: anyhow::Error) -> Result<RgbaImage> {
+    if !crate::is_sandboxed() {
+        return Err(e);
+    }
+    let status = std::process::Command::new(std::env::current_exe()?)
+        .arg("grant-access")
+        .status()?;
+    if !status.success() {
+        return Err(e.context("screenshot permission was not granted"));
+    }
+    // Let the permission window disappear before grabbing the screen.
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    grab_portal()
+}
+
+/// Ask the portal for a screenshot and throw it away (used to obtain the permission).
+pub fn probe_portal() -> Result<()> {
+    grab_portal().map(|_| ())
 }
 
 fn grab_portal() -> Result<RgbaImage> {
@@ -48,8 +71,34 @@ fn grab_portal() -> Result<RgbaImage> {
         .to_rgba8();
     // The portal stores the capture in the user's Pictures folder; it is only a
     // temporary transport for us, exactly like Flameshot removes it.
-    let _ = std::fs::remove_file(&path);
+    remove_portal_file(&path);
     Ok(img)
+}
+
+/// Inside Flatpak the portal hands out a document-portal path
+/// (`/run/user/UID/doc/ID/Screenshot.png`); the real file lives in the
+/// Pictures folder (to which the manifest grants access).
+fn remove_portal_file(path: &std::path::Path) {
+    let _ = std::fs::remove_file(path);
+    if !path.to_string_lossy().contains("/doc/") {
+        return;
+    }
+    let (Some(name), Some(pictures)) = (path.file_name(), dirs::picture_dir()) else {
+        return;
+    };
+    let mut candidates = vec![pictures.join(name)];
+    if let Ok(dirs) = std::fs::read_dir(&pictures) {
+        candidates.extend(dirs.flatten().map(|d| d.path().join(name)));
+    }
+    for c in candidates {
+        let fresh = std::fs::metadata(&c)
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| t.elapsed().is_ok_and(|e| e.as_secs() < 30));
+        if fresh {
+            let _ = std::fs::remove_file(c);
+            break;
+        }
+    }
 }
 
 fn grab_x11() -> Result<RgbaImage> {

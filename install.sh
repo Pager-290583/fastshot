@@ -7,9 +7,10 @@ PREFIX="${PREFIX:-$HOME/.local}"
 CARGO="${CARGO:-$(command -v cargo || echo "$HOME/.cargo/bin/cargo")}"
 
 "$CARGO" install --path . --root "$PREFIX" --force
-install -Dm644 assets/fastshot.svg "$PREFIX/share/icons/hicolor/scalable/apps/fastshot.svg"
-install -Dm644 assets/fastshot.desktop "$PREFIX/share/applications/fastshot.desktop"
-sed -i "s|^Exec=fastshot|Exec=$PREFIX/bin/fastshot|" "$PREFIX/share/applications/fastshot.desktop"
+APP_ID=io.github.Pager_290583.Fastshot
+install -Dm644 "assets/$APP_ID.svg" "$PREFIX/share/icons/hicolor/scalable/apps/$APP_ID.svg"
+install -Dm644 "assets/$APP_ID.desktop" "$PREFIX/share/applications/$APP_ID.desktop"
+sed -i "s|^Exec=fastshot|Exec=$PREFIX/bin/fastshot|" "$PREFIX/share/applications/$APP_ID.desktop"
 command -v update-desktop-database >/dev/null && update-desktop-database "$PREFIX/share/applications" || true
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q "$PREFIX/share/icons/hicolor" || true
 

@@ -17,6 +17,14 @@ fn gsettings(args: &[&str]) -> Result<String> {
 
 /// Bind `accel` (e.g. "Print") to `fastshot gui`.
 pub fn install_gnome_binding(accel: &str) -> Result<()> {
+    if crate::is_sandboxed() {
+        bail!(
+            "not available inside Flatpak: start the tray (`flatpak run {id}`), it registers \
+             {accel} through the Global Shortcuts portal. Alternatively add a custom shortcut \
+             in GNOME Settings with the command `flatpak run {id} gui`.",
+            id = crate::APP_ID
+        );
+    }
     let exe = std::env::current_exe()?.to_string_lossy().into_owned();
     let current = gsettings(&["get", SCHEMA, "custom-keybindings"])?;
     // Value looks like "@as []" or "['/org/.../custom0/', ...]".

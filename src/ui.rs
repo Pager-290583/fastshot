@@ -28,7 +28,7 @@ pub fn window_options(title: &str, size: [f32; 2]) -> eframe::NativeOptions {
     eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(title)
-            .with_app_id("fastshot")
+            .with_app_id(crate::APP_ID)
             .with_icon(crate::icon::icon_data(64))
             .with_inner_size(size)
             .with_min_inner_size([size[0] * 0.6, size[1] * 0.6]),

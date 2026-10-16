@@ -404,7 +404,12 @@ impl ConfigApp {
             "Wayland does not let applications grab keys globally. Bind the Print key to \
              `fastshot gui` in your desktop settings, or let Fastshot do it for GNOME:",
         );
-        if ui.button("Bind Print Screen to fastshot gui (GNOME)").clicked() {
+        if crate::is_sandboxed() {
+            ui.label(
+                "In the Flatpak version the tray registers the Print key through the \
+                 Global Shortcuts portal; your desktop asks to confirm it on first start.",
+            );
+        } else if ui.button("Bind Print Screen to fastshot gui (GNOME)").clicked() {
             self.status = match crate::shortcut::install_gnome_binding("Print") {
                 Ok(()) => "Shortcut installed: Print → fastshot gui".into(),
                 Err(e) => format!("Failed: {e:#}"),
@@ -443,6 +448,9 @@ impl eframe::App for ConfigApp {
         });
         // Settings apply immediately, like in Flameshot.
         if toml::to_string(&self.cfg).ok() != toml::to_string(&self.saved).ok() {
+            if self.cfg.autostart != self.saved.autostart {
+                crate::autostart::sync(self.cfg.autostart);
+            }
             match self.cfg.save() {
                 Ok(()) => {
                     self.saved = self.cfg.clone();
@@ -573,6 +581,87 @@ impl eframe::App for About {
                     }
                 });
             });
+        });
+    }
+}
+
+// -------------------------------------------------------- grant access ----
+
+struct GrantAccess {
+    state: GrantState,
+}
+
+#[derive(PartialEq)]
+enum GrantState {
+    Idle,
+    Requested,
+    Failed(String),
+}
+
+/// Exits with status 0 once the screenshot portal accepted a request.
+pub fn grant_access() -> anyhow::Result<()> {
+    let granted = std::rc::Rc::new(std::cell::Cell::new(false));
+    let out = granted.clone();
+    eframe::run_native(
+        "Fastshot",
+        window_options("Fastshot — screenshot permission", [440.0, 230.0]),
+        Box::new(move |cc| {
+            setup_fonts(&cc.egui_ctx);
+            Ok(Box::new(GrantApp { app: GrantAccess { state: GrantState::Idle }, granted: out }))
+        }),
+    )
+    .map_err(|e| anyhow::anyhow!("GUI error: {e}"))?;
+    if granted.get() {
+        Ok(())
+    } else {
+        std::process::exit(1)
+    }
+}
+
+struct GrantApp {
+    app: GrantAccess,
+    granted: std::rc::Rc<std::cell::Cell<bool>>,
+}
+
+impl eframe::App for GrantApp {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = &ui.ctx().clone();
+        if self.app.state == GrantState::Requested {
+            // Runs while our window is focused, so GNOME may show its dialog.
+            match crate::capture::probe_portal() {
+                Ok(()) => {
+                    self.granted.set(true);
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                Err(e) => self.app.state = GrantState::Failed(format!("{e:#}")),
+            }
+        }
+        egui::CentralPanel::default().show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(egui_phosphor::regular::CAMERA).size(40.0));
+                ui.vertical(|ui| {
+                    ui.heading("Allow Fastshot to take screenshots");
+                    ui.label(
+                        "Your desktop asks for permission once. Press the button and \
+                         choose “Allow” in the dialog that appears.",
+                    );
+                });
+            });
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                let busy = self.app.state == GrantState::Requested;
+                if ui.add_enabled(!busy, egui::Button::new("Grant access")).clicked() {
+                    self.app.state = GrantState::Requested;
+                    ctx.request_repaint();
+                }
+                if ui.button("Cancel").clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            });
+            if let GrantState::Failed(e) = &self.app.state {
+                ui.add_space(8.0);
+                ui.colored_label(Color32::LIGHT_RED, format!("Not granted: {e}"));
+            }
         });
     }
 }

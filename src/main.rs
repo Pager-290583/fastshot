@@ -25,6 +25,14 @@ use clap::{Args, Parser, Subcommand};
 use image::RgbaImage;
 
 use config::{Config, State};
+
+/// Application ID (Flatpak, desktop entry, Wayland app_id).
+pub const APP_ID: &str = "io.github.Pager_290583.Fastshot";
+
+/// Running inside a Flatpak sandbox?
+pub fn is_sandboxed() -> bool {
+    std::path::Path::new("/.flatpak-info").exists()
+}
 use overlay::{CaptureResult, ExitAction, OverlayOptions};
 
 #[derive(Parser)]
@@ -71,6 +79,8 @@ enum Cmd {
         #[arg(long, default_value = "Print")]
         key: String,
     },
+    /// Ask the desktop for permission to take screenshots (Flatpak)
+    GrantAccess,
     /// Internal: serve clipboard contents read from stdin (X11)
     #[command(hide = true)]
     ClipboardServe {
@@ -189,6 +199,7 @@ fn run(cli: Cli) -> Result<()> {
             println!("Bound {key} to `fastshot gui`.");
             Ok(())
         }
+        Cmd::GrantAccess => windows::grant_access(),
         Cmd::ClipboardServe { mime } => export::clipboard_serve(&mime),
     }
 }
@@ -385,6 +396,7 @@ fn config_cmd(a: ConfigArgs) -> Result<()> {
     let mut cfg = Config::load();
     if let Some(v) = a.autostart {
         cfg.autostart = v;
+        autostart::sync(v);
     }
     if let Some(v) = a.filename {
         cfg.filename_pattern = v;
