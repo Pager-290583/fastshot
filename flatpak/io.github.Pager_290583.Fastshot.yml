@@ -18,6 +18,8 @@ finish-args:
   - --talk-name=org.freedesktop.Notifications
   # Tray icon (StatusNotifierItem)
   - --talk-name=org.kde.StatusNotifierWatcher
+  # Global shortcuts: GNOME keybindings are written with `flatpak-spawn --host gsettings`
+  - --talk-name=org.freedesktop.Flatpak
 
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin

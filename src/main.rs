@@ -74,10 +74,13 @@ enum Cmd {
     History,
     /// Show information about Fastshot
     About,
-    /// Bind a key (default: Print) to `fastshot gui` in GNOME
+    /// Set a global shortcut, e.g. `--key '<Shift><Super>4'` (empty key removes it)
     InstallShortcut {
         #[arg(long, default_value = "Print")]
         key: String,
+        /// capture, full_clipboard, full_save or launcher
+        #[arg(long, default_value = "capture")]
+        action: String,
     },
     /// Ask the desktop for permission to take screenshots (Flatpak)
     GrantAccess,
@@ -164,6 +167,9 @@ struct ConfigArgs {
     /// Check the configuration for errors
     #[arg(long)]
     check: bool,
+    /// Open the window on the global shortcuts page
+    #[arg(long)]
+    shortcuts: bool,
 }
 
 fn main() {
@@ -194,9 +200,24 @@ fn run(cli: Cli) -> Result<()> {
         }
         Cmd::History => windows::history(),
         Cmd::About => windows::about(),
-        Cmd::InstallShortcut { key } => {
-            shortcut::install_gnome_binding(&key)?;
-            println!("Bound {key} to `fastshot gui`.");
+        Cmd::InstallShortcut { key, action } => {
+            let a = shortcut::action(&action).ok_or_else(|| anyhow!("unknown action {action}"))?;
+            let mut cfg = Config::load();
+            if key.is_empty() {
+                cfg.hotkeys.remove(a.id);
+            } else {
+                cfg.hotkeys.insert(a.id.into(), shortcut::normalize(&key));
+            }
+            cfg.save()?;
+            if shortcut::gnome_available() {
+                shortcut::apply(&cfg.hotkeys)?;
+                match shortcut::display(&key) {
+                    k if k.is_empty() => println!("{}: removed", a.label),
+                    k => println!("{}: {k}", a.label),
+                }
+            } else {
+                println!("Saved; the tray registers it through the Global Shortcuts portal on next start.");
+            }
             Ok(())
         }
         Cmd::GrantAccess => windows::grant_access(),
@@ -384,7 +405,7 @@ fn config_cmd(a: ConfigArgs) -> Result<()> {
         || a.contrastcolor.is_some()
         || a.check;
     if !any {
-        return windows::config();
+        return windows::config(a.shortcuts);
     }
     if a.check {
         let s = std::fs::read_to_string(config::config_path()).unwrap_or_default();

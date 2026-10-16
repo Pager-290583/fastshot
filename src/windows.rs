@@ -1,6 +1,8 @@
 //! Auxiliary windows: launcher, configuration, upload history, about.
 
+use std::collections::BTreeMap;
 use std::process::Command;
+use std::sync::mpsc;
 
 use egui::{Color32, RichText, TextureHandle, Vec2};
 
@@ -153,9 +155,57 @@ struct ConfigApp {
     saved: Config,
     tab: Tab,
     status: String,
+    hk: HotkeyState,
+    /// Scripted input (tests).
+    script: Option<crate::script::Script>,
 }
 
-pub fn config() -> anyhow::Result<()> {
+enum HotkeyMsg {
+    /// GNOME keybindings usable? + accelerators already taken in GNOME.
+    Loaded(bool, BTreeMap<String, String>),
+    Applied(Result<(), String>),
+}
+
+/// Global hotkey editor state. gsettings calls run on a worker thread.
+#[derive(Default)]
+struct HotkeyState {
+    /// Action whose shortcut is being recorded.
+    recording: Option<&'static str>,
+    gnome: Option<bool>,
+    taken: BTreeMap<String, String>,
+    jobs: Option<mpsc::Sender<BTreeMap<String, String>>>,
+    results: Option<mpsc::Receiver<HotkeyMsg>>,
+}
+
+impl HotkeyState {
+    fn start(&mut self, ctx: &egui::Context) {
+        if self.jobs.is_some() {
+            return;
+        }
+        let (job_tx, job_rx) = mpsc::channel::<BTreeMap<String, String>>();
+        let (res_tx, res_rx) = mpsc::channel();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let gnome = crate::shortcut::gnome_available();
+            let taken = if gnome { crate::shortcut::gnome_bindings() } else { BTreeMap::new() };
+            let _ = res_tx.send(HotkeyMsg::Loaded(gnome, taken));
+            ctx.request_repaint();
+            while let Ok(mut hotkeys) = job_rx.recv() {
+                // Only the latest state matters.
+                while let Ok(h) = job_rx.try_recv() {
+                    hotkeys = h;
+                }
+                let res = crate::shortcut::apply(&hotkeys).map_err(|e| format!("{e:#}"));
+                let _ = res_tx.send(HotkeyMsg::Applied(res));
+                ctx.request_repaint();
+            }
+        });
+        self.jobs = Some(job_tx);
+        self.results = Some(res_rx);
+    }
+}
+
+pub fn config(shortcuts_tab: bool) -> anyhow::Result<()> {
     let cfg = Config::load();
     run_window(
         "Fastshot Configuration",
@@ -163,8 +213,10 @@ pub fn config() -> anyhow::Result<()> {
         ConfigApp {
             saved: cfg.clone(),
             cfg,
-            tab: Tab::Interface,
+            tab: if shortcuts_tab { Tab::Shortcuts } else { Tab::Interface },
             status: String::new(),
+            hk: HotkeyState::default(),
+            script: crate::script::Script::from_env(),
         },
     )
 }
@@ -390,7 +442,7 @@ impl ConfigApp {
     }
 
     fn shortcuts(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Shortcuts");
+        ui.heading("Capture Screen Shortcuts");
         egui::Grid::new("shortcuts").num_columns(2).striped(true).spacing([24.0, 6.0]).show(ui, |ui| {
             for (k, d) in shortcut_table() {
                 ui.label(RichText::new(k).monospace().strong());
@@ -398,29 +450,188 @@ impl ConfigApp {
                 ui.end_row();
             }
         });
-        ui.add_space(10.0);
-        ui.label(RichText::new("Global shortcut").strong());
-        ui.label(
-            "Wayland does not let applications grab keys globally. Bind the Print key to \
-             `fastshot gui` in your desktop settings, or let Fastshot do it for GNOME:",
-        );
-        if crate::is_sandboxed() {
-            ui.label(
-                "In the Flatpak version the tray registers the Print key through the \
-                 Global Shortcuts portal; your desktop asks to confirm it on first start.",
-            );
-        } else if ui.button("Bind Print Screen to fastshot gui (GNOME)").clicked() {
-            self.status = match crate::shortcut::install_gnome_binding("Print") {
-                Ok(()) => "Shortcut installed: Print → fastshot gui".into(),
-                Err(e) => format!("Failed: {e:#}"),
-            };
+    }
+
+    /// macOS-style editor: click a field, press the key combination.
+    fn global_hotkeys(&mut self, ui: &mut egui::Ui) {
+        use crate::shortcut::{self as sc, ACTIONS};
+        use egui_phosphor::regular as ic;
+
+        ui.heading("Global Shortcuts");
+        ui.label("Click a field and press a key combination. Esc cancels, Backspace clears.");
+        ui.add_space(6.0);
+
+        egui::Grid::new("hotkeys").num_columns(3).spacing([12.0, 8.0]).show(ui, |ui| {
+            for action in ACTIONS {
+                let accel = self.cfg.hotkeys.get(action.id).cloned().unwrap_or_default();
+                let (mut mods, key) = sc::split(&accel);
+                ui.label(action.label);
+
+                let recording = self.hk.recording == Some(action.id);
+                let text = if recording {
+                    RichText::new("Press keys…").italics()
+                } else if key.is_empty() {
+                    RichText::new("Click to record").weak()
+                } else {
+                    RichText::new(sc::display(&accel)).monospace().strong()
+                };
+                let field = egui::Button::new(text).min_size(Vec2::new(200.0, 26.0)).selected(recording);
+                if ui.add(field).on_hover_text("Click, then press the shortcut").clicked() {
+                    self.hk.recording = if recording { None } else { Some(action.id) };
+                }
+
+                ui.horizontal(|ui| {
+                    // Super is not reported by the toolkit, so it is a toggle
+                    // (it is kept when a new combination is recorded).
+                    let mut sup = mods.contains(&"<Super>");
+                    let toggle = ui
+                        .toggle_value(&mut sup, "Super")
+                        .on_hover_text("Add the Super (Windows) key to this shortcut");
+                    if toggle.changed() && !key.is_empty() {
+                        mods.retain(|m| *m != "<Super>");
+                        if sup {
+                            mods.push("<Super>");
+                        }
+                        self.cfg.hotkeys.insert(action.id.into(), sc::join(&mods, &key));
+                    }
+                    ui.menu_button(ic::DOTS_THREE, |ui| {
+                        for (label, k) in [("PrtSc", "Print"), ("Pause", "Pause"), ("Scroll Lock", "Scroll_Lock")] {
+                            if ui.button(format!("Use {label} key")).clicked() {
+                                self.cfg.hotkeys.insert(action.id.into(), sc::join(&mods, k));
+                                self.hk.recording = None;
+                                ui.close();
+                            }
+                        }
+                        ui.separator();
+                        if ui.button(format!("{} Clear", ic::X)).clicked() {
+                            self.cfg.hotkeys.remove(action.id);
+                            self.hk.recording = None;
+                            ui.close();
+                        }
+                    })
+                    .response
+                    .on_hover_text("Keys that cannot be recorded, clear");
+                });
+                ui.end_row();
+
+                let norm = sc::normalize(&accel);
+                if !norm.is_empty() {
+                    let dup = ACTIONS.iter().find(|a| {
+                        a.id != action.id
+                            && self.cfg.hotkeys.get(a.id).is_some_and(|o| sc::normalize(o) == norm)
+                    });
+                    let warn = match (dup, self.hk.taken.get(&norm)) {
+                        (Some(a), _) => Some(format!("Also assigned to \"{}\"", a.label)),
+                        (None, Some(owner)) => Some(format!("Already used by GNOME: {owner}")),
+                        _ => None,
+                    };
+                    if let Some(w) = warn {
+                        ui.label("");
+                        ui.colored_label(Color32::from_rgb(0xe0, 0x9a, 0x00), format!("{} {w}", ic::WARNING));
+                        ui.end_row();
+                    }
+                }
+            }
+        });
+
+        ui.add_space(8.0);
+        if ui.button("Restore defaults").clicked() {
+            self.cfg.hotkeys = sc::default_hotkeys();
+            self.hk.recording = None;
+        }
+        ui.add_space(6.0);
+        match self.hk.gnome {
+            None => {
+                ui.weak("Checking desktop settings…");
+            }
+            Some(true) => {
+                ui.weak(
+                    "Shortcuts are saved as GNOME keyboard shortcuts and work even when Fastshot \
+                     is not running. PrtSc is taken over from the GNOME screenshot tool \
+                     (it moves to Shift+Super+PrtSc) and given back when unused.",
+                );
+            }
+            Some(false) => {
+                ui.weak(
+                    "Shortcuts are registered by the tray icon through the Global Shortcuts \
+                     portal; restart the tray after changing them. Your desktop may ask to \
+                     confirm them.",
+                );
+            }
+        }
+    }
+
+    /// Record the pressed combination; key events are consumed so that they
+    /// do not also activate widgets.
+    fn record_hotkey(&mut self, ctx: &egui::Context) {
+        let Some(id) = self.hk.recording else { return };
+        let events = ctx.input_mut(|i| {
+            let ev = i.events.clone();
+            i.events.retain(|e| !matches!(e, egui::Event::Key { .. } | egui::Event::Text(_)));
+            ev
+        });
+        for e in events {
+            let egui::Event::Key { key, physical_key, pressed: true, modifiers, .. } = e else { continue };
+            let current = self.cfg.hotkeys.get(id).cloned().unwrap_or_default();
+            let had_super = crate::shortcut::split(&current).0.contains(&"<Super>");
+            let plain = !modifiers.ctrl && !modifiers.alt && !modifiers.shift;
+            match key {
+                egui::Key::Escape => {}
+                egui::Key::Backspace | egui::Key::Delete if plain => {
+                    self.cfg.hotkeys.remove(id);
+                }
+                _ => {
+                    let Some(name) = crate::shortcut::gtk_key_name(physical_key.unwrap_or(key)) else {
+                        continue;
+                    };
+                    let mut mods = Vec::new();
+                    for (on, m) in [
+                        (modifiers.ctrl, "<Control>"),
+                        (modifiers.alt, "<Alt>"),
+                        (modifiers.shift, "<Shift>"),
+                        (had_super, "<Super>"),
+                    ] {
+                        if on {
+                            mods.push(m);
+                        }
+                    }
+                    self.cfg.hotkeys.insert(id.into(), crate::shortcut::join(&mods, &name));
+                }
+            }
+            self.hk.recording = None;
+            break;
+        }
+    }
+
+    fn poll_hotkeys(&mut self, ctx: &egui::Context) {
+        self.hk.start(ctx);
+        while let Some(msg) = self.hk.results.as_ref().and_then(|r| r.try_recv().ok()) {
+            match msg {
+                HotkeyMsg::Loaded(gnome, taken) => {
+                    self.hk.gnome = Some(gnome);
+                    self.hk.taken = taken;
+                }
+                HotkeyMsg::Applied(Ok(())) => self.status = "Shortcuts applied".into(),
+                HotkeyMsg::Applied(Err(e)) => self.status = format!("Shortcuts: {e}"),
+            }
         }
     }
 }
 
 impl eframe::App for ConfigApp {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if let Some(s) = &mut self.script {
+            s.feed(raw);
+            if s.active() {
+                ctx.request_repaint();
+            }
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let _ctx = &ui.ctx().clone();
+        let ctx = &ui.ctx().clone();
+        self.poll_hotkeys(ctx);
+        self.record_hotkey(ctx);
         egui::Panel::top("tabs").show(ui, |ui| {
             ui.horizontal(|ui| {
                 use egui_phosphor::regular as ic;
@@ -443,13 +654,23 @@ impl eframe::App for ConfigApp {
                 Tab::Interface => self.interface(ui),
                 Tab::Filename => self.filename(ui),
                 Tab::General => self.general(ui),
-                Tab::Shortcuts => self.shortcuts(ui),
+                Tab::Shortcuts => {
+                    self.global_hotkeys(ui);
+                    ui.add_space(14.0);
+                    self.shortcuts(ui);
+                }
             });
         });
         // Settings apply immediately, like in Flameshot.
         if toml::to_string(&self.cfg).ok() != toml::to_string(&self.saved).ok() {
             if self.cfg.autostart != self.saved.autostart {
                 crate::autostart::sync(self.cfg.autostart);
+            }
+            if self.cfg.hotkeys != self.saved.hotkeys
+                && self.hk.gnome == Some(true)
+                && let Some(jobs) = &self.hk.jobs
+            {
+                let _ = jobs.send(self.cfg.hotkeys.clone());
             }
             match self.cfg.save() {
                 Ok(()) => {

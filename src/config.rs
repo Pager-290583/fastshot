@@ -65,6 +65,10 @@ pub struct Config {
     pub save_path_fixed: bool,
     pub filename_pattern: String,
     pub save_as_file_extension: String,
+
+    // ---- Global hotkeys ----
+    /// Action id (see `shortcut::ACTIONS`) → GTK accelerator, e.g. "<Shift><Super>4".
+    pub hotkeys: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -132,6 +136,7 @@ impl Default for Config {
             save_path_fixed: false,
             filename_pattern: "%F_%H-%M".into(),
             save_as_file_extension: "png".into(),
+            hotkeys: crate::shortcut::default_hotkeys(),
         }
     }
 }
