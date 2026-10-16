@@ -1,0 +1,29 @@
+[Desktop Entry]
+Type=Application
+Name=Fastshot
+GenericName=Screenshot tool
+GenericName[ru]=Снимок экрана
+Comment=Powerful yet simple to use screenshot software
+Comment[ru]=Мощный и простой инструмент для скриншотов
+Exec=fastshot tray
+Icon=fastshot
+Terminal=false
+Categories=Graphics;Utility;
+Keywords=screenshot;screen;capture;snipping;annotate;flameshot;скриншот;снимок;
+StartupWMClass=fastshot
+Actions=Capture;Launcher;Configure;
+
+[Desktop Action Capture]
+Name=Take screenshot
+Name[ru]=Сделать скриншот
+Exec=fastshot gui
+
+[Desktop Action Launcher]
+Name=Open launcher
+Name[ru]=Открыть лаунчер
+Exec=fastshot launcher
+
+[Desktop Action Configure]
+Name=Configure
+Name[ru]=Настройки
+Exec=fastshot config

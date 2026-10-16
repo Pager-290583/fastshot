@@ -1,0 +1,3 @@
+# Keep build artifacts out of the synced Yandex.Disk folder.
+[build]
+target-dir = "/home/oleg/.cache/fastshot-target"
